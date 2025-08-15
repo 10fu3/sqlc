@@ -259,9 +259,12 @@ func (c *Compiler) outputColumns(qc *QueryCatalog, node ast.Node) ([]*Column, er
 
 				// add a column with a reference to an embedded table
 				if embed, ok := qc.embeds.Find(n); ok {
+					// NEW: Analyze JOIN information
+					isNullable := isEmbedTableNullable(node, embed.Table)
 					cols = append(cols, &Column{
-						Name:       embed.Table.Name,
-						EmbedTable: embed.Table,
+						Name:               embed.Table.Name,
+						EmbedTable:         embed.Table,
+						EmbedTableNullable: isNullable, // NEW
 					})
 					continue
 				}
@@ -453,6 +456,91 @@ func isTableRequired(n ast.Node, col *Column, prior int) int {
 	}
 
 	return tableNotFound
+}
+
+// isEmbedTableNullable checks if the embedded table comes from a nullable JOIN
+func isEmbedTableNullable(node ast.Node, embedTable *ast.TableName) bool {
+	switch n := node.(type) {
+	case *ast.SelectStmt:
+		if n.FromClause != nil {
+			return checkJoinNullability(n.FromClause, embedTable)
+		}
+	}
+	return false
+}
+
+// checkJoinNullability analyzes JOIN clauses to determine if a table is nullable
+func checkJoinNullability(fromClause *ast.List, embedTable *ast.TableName) bool {
+	for _, item := range fromClause.Items {
+		if joinExpr, ok := item.(*ast.JoinExpr); ok {
+			switch joinExpr.Jointype {
+			case ast.JoinTypeLeft:
+				// Right side table is nullable
+				if isTableInNode(joinExpr.Rarg, embedTable) {
+					return true
+				}
+			case ast.JoinTypeRight:
+				// Left side table is nullable
+				if isTableInNode(joinExpr.Larg, embedTable) {
+					return true
+				}
+			case ast.JoinTypeFull:
+				// Both sides are nullable
+				if isTableInNode(joinExpr.Larg, embedTable) ||
+					isTableInNode(joinExpr.Rarg, embedTable) {
+					return true
+				}
+			case ast.JoinTypeInner:
+				// Neither side is nullable, but check nested JOINs
+				if checkJoinNullabilityInNode(joinExpr.Larg, embedTable) ||
+					checkJoinNullabilityInNode(joinExpr.Rarg, embedTable) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// isTableInNode checks if a table is referenced in the given AST node
+func isTableInNode(node ast.Node, embedTable *ast.TableName) bool {
+	switch n := node.(type) {
+	case *ast.RangeVar:
+		if n.Relname != nil && *n.Relname == embedTable.Name {
+			return true
+		}
+		if n.Alias != nil && n.Alias.Aliasname != nil && *n.Alias.Aliasname == embedTable.Name {
+			return true
+		}
+	case *ast.JoinExpr:
+		return isTableInNode(n.Larg, embedTable) || isTableInNode(n.Rarg, embedTable)
+	}
+	return false
+}
+
+// checkJoinNullabilityInNode recursively checks for nullable JOINs in a node
+func checkJoinNullabilityInNode(node ast.Node, embedTable *ast.TableName) bool {
+	if joinExpr, ok := node.(*ast.JoinExpr); ok {
+		switch joinExpr.Jointype {
+		case ast.JoinTypeLeft:
+			if isTableInNode(joinExpr.Rarg, embedTable) {
+				return true
+			}
+		case ast.JoinTypeRight:
+			if isTableInNode(joinExpr.Larg, embedTable) {
+				return true
+			}
+		case ast.JoinTypeFull:
+			if isTableInNode(joinExpr.Larg, embedTable) ||
+				isTableInNode(joinExpr.Rarg, embedTable) {
+				return true
+			}
+		}
+		// Recursively check nested JOINs
+		return checkJoinNullabilityInNode(joinExpr.Larg, embedTable) ||
+			checkJoinNullabilityInNode(joinExpr.Rarg, embedTable)
+	}
+	return false
 }
 
 type tableVisitor struct {

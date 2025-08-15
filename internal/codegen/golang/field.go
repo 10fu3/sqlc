@@ -19,6 +19,8 @@ type Field struct {
 	Column  *plugin.Column
 	// EmbedFields contains the embedded fields that require scanning.
 	EmbedFields []Field
+	// IsEmbedNullable indicates if this field is an embedded nullable type (sql.Null[T])
+	IsEmbedNullable bool
 }
 
 func (gf Field) Tag() string {

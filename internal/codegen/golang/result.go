@@ -399,7 +399,12 @@ func columnsToStruct(req *plugin.GenerateRequest, options *opts.Options, name st
 		if c.embed == nil {
 			f.Type = goType(req, options, c.Column)
 		} else {
-			f.Type = c.embed.modelType
+			if c.Column.EmbedTableNullable {
+				f.Type = fmt.Sprintf("sql.Null[%s]", c.embed.modelType)
+				f.IsEmbedNullable = true
+			} else {
+				f.Type = c.embed.modelType
+			}
 			f.EmbedFields = c.embed.fields
 		}
 

@@ -204,10 +204,18 @@ func (v QueryValue) Scan() string {
 			// append any embedded fields
 			if len(f.EmbedFields) > 0 {
 				for _, embed := range f.EmbedFields {
-					if strings.HasPrefix(embed.Type, "[]") && embed.Type != "[]byte" && !v.SQLDriver.IsPGX() {
-						out = append(out, "pq.Array(&"+v.Name+"."+f.Name+"."+embed.Name+")")
+					var fieldAccess string
+					// Check if the parent field is nullable embedded type
+					if f.IsEmbedNullable {
+						fieldAccess = v.Name + "." + f.Name + ".V." + embed.Name
 					} else {
-						out = append(out, "&"+v.Name+"."+f.Name+"."+embed.Name)
+						fieldAccess = v.Name + "." + f.Name + "." + embed.Name
+					}
+
+					if strings.HasPrefix(embed.Type, "[]") && embed.Type != "[]byte" && !v.SQLDriver.IsPGX() {
+						out = append(out, "pq.Array(&"+fieldAccess+")")
+					} else {
+						out = append(out, "&"+fieldAccess)
 					}
 				}
 				continue

@@ -37,6 +37,8 @@ type Column struct {
 	Type       *ast.TypeName
 	EmbedTable *ast.TableName
 
+	EmbedTableNullable bool
+
 	IsSqlcSlice bool // is this sqlc.slice()
 
 	skipTableRequiredCheck bool
