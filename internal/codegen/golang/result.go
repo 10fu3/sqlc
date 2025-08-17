@@ -93,12 +93,17 @@ func buildStructs(req *plugin.GenerateRequest, options *opts.Options) []Struct {
 				if options.EmitJsonTags {
 					tags["json"] = JSONTagName(column.Name, options)
 				}
+				// Add primary key tag when DB tags are enabled and column is a primary key
+				if options.EmitDbTags && column.PrimaryKey {
+					tags["pk"] = "true"
+				}
 				addExtraGoStructTags(tags, req, options, column)
 				s.Fields = append(s.Fields, Field{
 					Name:    StructName(column.Name, options),
 					Type:    goType(req, options, column),
 					Tags:    tags,
 					Comment: column.Comment,
+					Column:  column,
 				})
 			}
 			structs = append(structs, s)
@@ -401,6 +406,13 @@ func columnsToStruct(req *plugin.GenerateRequest, options *opts.Options, name st
 		} else {
 			f.Type = c.embed.modelType
 			f.EmbedFields = c.embed.fields
+			f.EmbedIsNullable = c.EmbedIsNullable
+			// Collect primary key fields
+			for _, ef := range c.embed.fields {
+				if ef.Column != nil && ef.Column.PrimaryKey {
+					f.EmbedPrimaryKeys = append(f.EmbedPrimaryKeys, ef)
+				}
+			}
 		}
 
 		gs.Fields = append(gs.Fields, f)

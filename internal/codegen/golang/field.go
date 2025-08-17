@@ -19,6 +19,10 @@ type Field struct {
 	Column  *plugin.Column
 	// EmbedFields contains the embedded fields that require scanning.
 	EmbedFields []Field
+	// EmbedIsNullable indicates if this embedded field is nullable (e.g., from LEFT JOIN)
+	EmbedIsNullable bool
+	// EmbedPrimaryKeys contains the primary key fields within the embedded struct
+	EmbedPrimaryKeys []Field
 }
 
 func (gf Field) Tag() string {
