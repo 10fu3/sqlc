@@ -100,6 +100,8 @@ message Column {
   string original_name = 15;
   bool unsigned = 16;
   int32 array_dims = 17;
+  bool embed_is_nullable = 18;
+  bool primary_key = 19;
 }
 
 message Query {
