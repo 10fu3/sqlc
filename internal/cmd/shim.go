@@ -94,12 +94,13 @@ func pluginCatalog(c *catalog.Catalog) *plugin.Catalog {
 						Schema:  c.Type.Schema,
 						Name:    c.Type.Name,
 					},
-					Comment:   c.Comment,
-					NotNull:   c.IsNotNull,
-					Unsigned:  c.IsUnsigned,
-					IsArray:   c.IsArray,
-					ArrayDims: int32(c.ArrayDims),
-					Length:    int32(l),
+					Comment:    c.Comment,
+					NotNull:    c.IsNotNull,
+					Unsigned:   c.IsUnsigned,
+					IsArray:    c.IsArray,
+					ArrayDims:  int32(c.ArrayDims),
+					Length:     int32(l),
+					PrimaryKey: c.PrimaryKey,
 					Table: &plugin.Identifier{
 						Catalog: t.Rel.Catalog,
 						Schema:  t.Rel.Schema,
@@ -183,6 +184,7 @@ func pluginQueryColumn(c *compiler.Column) *plugin.Column {
 		IsNamedParam: c.IsNamedParam,
 		IsFuncCall:   c.IsFuncCall,
 		IsSqlcSlice:  c.IsSqlcSlice,
+		PrimaryKey:   c.PrimaryKey,
 	}
 
 	if c.Type != nil {
@@ -212,6 +214,8 @@ func pluginQueryColumn(c *compiler.Column) *plugin.Column {
 			Name:    c.EmbedTable.Name,
 		}
 	}
+	
+	out.EmbedIsNullable = c.EmbedIsNullable
 
 	return out
 }

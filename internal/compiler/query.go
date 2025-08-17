@@ -29,6 +29,7 @@ type Column struct {
 	Length       *int
 	IsNamedParam bool
 	IsFuncCall   bool
+	PrimaryKey   bool
 
 	// XXX: Figure out what PostgreSQL calls `foo.id`
 	Scope      string
@@ -40,6 +41,7 @@ type Column struct {
 	IsSqlcSlice bool // is this sqlc.slice()
 
 	skipTableRequiredCheck bool
+	EmbedIsNullable       bool // is this embedded table nullable (e.g., from LEFT JOIN)
 }
 
 type Query struct {

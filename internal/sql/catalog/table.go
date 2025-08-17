@@ -128,6 +128,7 @@ type Column struct {
 	ArrayDims  int
 	Comment    string
 	Length     *int
+	PrimaryKey bool
 
 	linkedType bool
 }
@@ -338,6 +339,7 @@ func (c *Catalog) defineColumn(table *ast.TableName, col *ast.ColumnDef) (*Colum
 		ArrayDims:  col.ArrayDims,
 		Comment:    col.Comment,
 		Length:     col.Length,
+		PrimaryKey: col.PrimaryKey,
 	}
 	if col.Vals != nil {
 		typeName := ast.TypeName{
