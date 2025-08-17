@@ -25,6 +25,7 @@ type Options struct {
 	EmitEnumValidMethod         bool              `json:"emit_enum_valid_method,omitempty" yaml:"emit_enum_valid_method"`
 	EmitAllEnumValues           bool              `json:"emit_all_enum_values,omitempty" yaml:"emit_all_enum_values"`
 	EmitSqlAsComment            bool              `json:"emit_sql_as_comment,omitempty" yaml:"emit_sql_as_comment"`
+	EmitEmbedNullableLeftJoin   bool              `json:"emit_embed_nullable_left_join,omitempty" yaml:"emit_embed_nullable_left_join"`
 	JsonTagsCaseStyle           string            `json:"json_tags_case_style,omitempty" yaml:"json_tags_case_style"`
 	Package                     string            `json:"package" yaml:"package"`
 	Out                         string            `json:"out" yaml:"out"`
