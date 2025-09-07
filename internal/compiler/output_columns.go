@@ -33,6 +33,7 @@ func (c *Compiler) OutputColumns(stmt ast.Node) ([]*catalog.Column, error) {
 			ArrayDims:  col.ArrayDims,
 			Comment:    col.Comment,
 			Length:     col.Length,
+			PrimaryKey: col.PrimaryKey,
 		})
 	}
 	return catCols, nil
@@ -391,6 +392,19 @@ func (c *Compiler) outputColumns(qc *QueryCatalog, node ast.Node) ([]*Column, er
 
 	if n, ok := node.(*ast.SelectStmt); ok {
 		for _, col := range cols {
+			// Check for nullable embedded tables
+			if col.EmbedTable != nil {
+				for _, f := range n.FromClause.Items {
+					embedCol := &Column{Table: col.EmbedTable}
+					res := isTableRequired(f, embedCol, tableRequired)
+					if res != tableNotFound {
+						col.EmbedIsNullable = res == tableOptional
+						break
+					}
+				}
+			}
+			
+			// Check for nullable regular columns
 			if !col.NotNull || col.Table == nil || col.skipTableRequiredCheck {
 				continue
 			}

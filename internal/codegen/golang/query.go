@@ -190,7 +190,152 @@ func (v QueryValue) HasSqlcSlices() bool {
 	return false
 }
 
+func (v QueryValue) HasNullableEmbed(emitEmbedNullableLeftJoin bool) bool {
+	if !emitEmbedNullableLeftJoin || v.Struct == nil {
+		return false
+	}
+	for _, f := range v.Struct.Fields {
+		if len(f.EmbedFields) > 0 && f.EmbedIsNullable {
+			return true
+		}
+	}
+	return false
+}
+
 func (v QueryValue) Scan() string {
+	return v.ScanWithOptions(false)
+}
+
+// Generate temporary variable declarations for nullable embeds
+func (v QueryValue) NullableEmbedTempVars() []string {
+	var vars []string
+	if v.Struct == nil {
+		return vars
+	}
+	for _, f := range v.Struct.Fields {
+		if len(f.EmbedFields) > 0 && f.EmbedIsNullable {
+			for _, embed := range f.EmbedFields {
+				// All embedded fields need to be nullable types when the embed is nullable
+				nullableType := makeNullableType(embed.Type)
+				varName := fmt.Sprintf("var %sEmbed%s%s %s", v.Name, f.Name, embed.Name, nullableType)
+				vars = append(vars, varName)
+			}
+		}
+	}
+	return vars
+}
+
+// Convert a type to its nullable equivalent
+func makeNullableType(typ string) string {
+	switch typ {
+	case "string":
+		return "sql.NullString"
+	case "int", "int32":
+		return "sql.NullInt32"
+	case "int64":
+		return "sql.NullInt64"
+	case "float32":
+		return "sql.NullFloat64"
+	case "float64":
+		return "sql.NullFloat64"
+	case "bool":
+		return "sql.NullBool"
+	case "time.Time":
+		return "sql.NullTime"
+	case "[]byte":
+		return "[]byte" // []byte can already handle NULL
+	default:
+		// For custom types, keep as-is but they should already be nullable
+		if strings.HasPrefix(typ, "sql.Null") {
+			return typ
+		}
+		// This might need adjustment based on the actual types used
+		return typ
+	}
+}
+
+// Extract value from a nullable type variable
+func extractNullableValue(varName string, originalType string) string {
+	switch originalType {
+	case "string":
+		return varName + ".String"
+	case "int", "int32":
+		return fmt.Sprintf("int32(%s.Int32)", varName)
+	case "int64":
+		return varName + ".Int64"
+	case "float32":
+		return fmt.Sprintf("float32(%s.Float64)", varName)
+	case "float64":
+		return varName + ".Float64"
+	case "bool":
+		return varName + ".Bool"
+	case "time.Time":
+		return varName + ".Time"
+	case "[]byte":
+		return varName // []byte doesn't need extraction
+	default:
+		// For sql.Null types, assume they have a field that matches the type name
+		if strings.HasPrefix(originalType, "sql.Null") {
+			return varName // Already a nullable type, use as-is
+		}
+		// For other types, assume direct assignment
+		return varName
+	}
+}
+
+// Generate assignment code for nullable embeds after scanning
+func (v QueryValue) NullableEmbedAssignments() []string {
+	var assignments []string
+	if v.Struct == nil {
+		return assignments
+	}
+	for _, f := range v.Struct.Fields {
+		if len(f.EmbedFields) > 0 && f.EmbedIsNullable {
+			// Find primary key fields
+			var primaryKeyChecks []string
+			if len(f.EmbedPrimaryKeys) > 0 {
+				// Use actual primary key fields
+				for _, pk := range f.EmbedPrimaryKeys {
+					checkVar := fmt.Sprintf("%sEmbed%s%s", v.Name, f.Name, pk.Name)
+					// Check if the nullable primary key is valid
+					primaryKeyChecks = append(primaryKeyChecks, fmt.Sprintf("%s.Valid", checkVar))
+				}
+			} else if len(f.EmbedFields) > 0 {
+				// Fallback: if no primary key is found, panic or error
+				panic(fmt.Sprintf("No primary key found for embedded table %s. Primary key information is required for nullable LEFT JOIN handling.", f.Name))
+			}
+			
+			if len(primaryKeyChecks) > 0 {
+				// Start the if statement with primary key checks
+				checkCondition := strings.Join(primaryKeyChecks, " || ")
+				assignments = append(assignments, fmt.Sprintf("if %s {", checkCondition))
+				assignments = append(assignments, fmt.Sprintf("    %s.%s.Valid = true", v.Name, f.Name))
+				
+				// Build the struct initialization
+				structType := f.Type
+				if strings.HasPrefix(structType, "sql.Null[") && strings.HasSuffix(structType, "]") {
+					structType = structType[9:len(structType)-1] // Extract type from sql.Null[Type]
+				}
+				
+				assignment := fmt.Sprintf("    %s.%s.V = %s{", v.Name, f.Name, structType)
+				assignments = append(assignments, assignment)
+				
+				// Add field assignments, extracting values from nullable types
+				for _, embed := range f.EmbedFields {
+					tempVar := fmt.Sprintf("%sEmbed%s%s", v.Name, f.Name, embed.Name)
+					value := extractNullableValue(tempVar, embed.Type)
+					assignments = append(assignments, fmt.Sprintf("        %s: %s,", embed.Name, value))
+				}
+				
+				assignments = append(assignments, "    }")
+				assignments = append(assignments, "}")
+			}
+		}
+	}
+	return assignments
+}
+
+func (v QueryValue) ScanWithOptions(emitEmbedNullableLeftJoin bool) string {
 	var out []string
 	if v.Struct == nil {
 		if strings.HasPrefix(v.Typ, "[]") && v.Typ != "[]byte" && !v.SQLDriver.IsPGX() {
@@ -200,6 +345,20 @@ func (v QueryValue) Scan() string {
 		}
 	} else {
 		for _, f := range v.Struct.Fields {
+
+			// Handle nullable embedded fields differently
+			if len(f.EmbedFields) > 0 && f.EmbedIsNullable && emitEmbedNullableLeftJoin {
+				// For nullable embeds, we need to scan into temporary fields
+				for _, embed := range f.EmbedFields {
+					tempName := v.Name + "Embed" + f.Name + embed.Name
+					if strings.HasPrefix(embed.Type, "[]") && embed.Type != "[]byte" && !v.SQLDriver.IsPGX() {
+						out = append(out, "pq.Array(&"+tempName+")")
+					} else {
+						out = append(out, "&"+tempName)
+					}
+				}
+				continue
+			}
 
 			// append any embedded fields
 			if len(f.EmbedFields) > 0 {

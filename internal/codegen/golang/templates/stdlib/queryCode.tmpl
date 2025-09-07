@@ -14,7 +14,11 @@ type {{.Arg.Type}} struct { {{- range .Arg.UniqueFields}}
 
 {{if .Ret.EmitStruct}}
 type {{.Ret.Type}} struct { {{- range .Ret.Struct.Fields}}
+  {{- if and $.EmitEmbedNullableLeftJoin .EmbedFields .EmbedIsNullable}}
+  {{.Name}} sql.Null[{{.Type}}] {{if .Tag}}{{$.Q}}{{.Tag}}{{$.Q}}{{end}}
+  {{- else}}
   {{.Name}} {{.Type}} {{if .Tag}}{{$.Q}}{{.Tag}}{{$.Q}}{{end}}
+  {{- end}}
   {{- end}}
 }
 {{end}}
@@ -27,7 +31,17 @@ func (q *Queries) {{.MethodName}}(ctx context.Context, {{ dbarg }} {{.Arg.Pair}}
 	{{- if or (ne .Arg.Pair .Ret.Pair) (ne .Arg.DefineType .Ret.DefineType) }}
 	var {{.Ret.Name}} {{.Ret.Type}}
 	{{- end}}
-	err := row.Scan({{.Ret.Scan}})
+	{{- if and $.EmitEmbedNullableLeftJoin (.Ret.HasNullableEmbed $.EmitEmbedNullableLeftJoin)}}
+	{{- range .Ret.NullableEmbedTempVars}}
+	{{.}}
+	{{- end}}
+	{{- end}}
+	err := row.Scan({{if and $.EmitEmbedNullableLeftJoin (.Ret.HasNullableEmbed $.EmitEmbedNullableLeftJoin)}}{{.Ret.ScanWithOptions $.EmitEmbedNullableLeftJoin}}{{else}}{{.Ret.Scan}}{{end}})
+	{{- if and $.EmitEmbedNullableLeftJoin (.Ret.HasNullableEmbed $.EmitEmbedNullableLeftJoin)}}
+	{{- range .Ret.NullableEmbedAssignments}}
+	{{.}}
+	{{- end}}
+	{{- end}}
 	{{- if $.WrapErrors}}
 	if err != nil {
 		err = fmt.Errorf("query {{.MethodName}}: %w", err)
@@ -53,9 +67,19 @@ func (q *Queries) {{.MethodName}}(ctx context.Context, {{ dbarg }} {{.Arg.Pair}}
     {{end -}}
     for rows.Next() {
         var {{.Ret.Name}} {{.Ret.Type}}
-        if err := rows.Scan({{.Ret.Scan}}); err != nil {
+        {{- if and $.EmitEmbedNullableLeftJoin (.Ret.HasNullableEmbed $.EmitEmbedNullableLeftJoin)}}
+        {{- range .Ret.NullableEmbedTempVars}}
+        {{.}}
+        {{- end}}
+        {{- end}}
+        if err := rows.Scan({{if and $.EmitEmbedNullableLeftJoin (.Ret.HasNullableEmbed $.EmitEmbedNullableLeftJoin)}}{{.Ret.ScanWithOptions $.EmitEmbedNullableLeftJoin}}{{else}}{{.Ret.Scan}}{{end}}); err != nil {
             return nil, {{if $.WrapErrors}}fmt.Errorf("query {{.MethodName}}: %w", err){{else}}err{{end}}
         }
+        {{- if and $.EmitEmbedNullableLeftJoin (.Ret.HasNullableEmbed $.EmitEmbedNullableLeftJoin)}}
+        {{- range .Ret.NullableEmbedAssignments}}
+        {{.}}
+        {{- end}}
+        {{- end}}
         items = append(items, {{.Ret.ReturnName}})
     }
     if err := rows.Close(); err != nil {
